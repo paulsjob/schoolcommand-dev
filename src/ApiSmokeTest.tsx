@@ -1,75 +1,107 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-type Child = { id: string; name: string; grade: string };
+type ApiState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "success"; data: unknown };
+
+async function fetchJson(path: string) {
+  const res = await fetch(path, { headers: { Accept: "application/json" } });
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new Error(`${path} failed (${res.status}): ${text}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function Section({
+  title,
+  state,
+}: {
+  title: string;
+  state: ApiState;
+}) {
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h2 style={{ margin: "0 0 8px 0" }}>{title}</h2>
+
+      {state.status === "loading" && <div>Loading...</div>}
+
+      {state.status === "error" && (
+        <div style={{ color: "crimson", fontWeight: 600 }}>
+          Error: {state.message}
+        </div>
+      )}
+
+      {state.status === "success" && (
+        <pre
+          style={{
+            background: "#0b0b0b",
+            color: "#f2f2f2",
+            padding: 16,
+            borderRadius: 10,
+            overflowX: "auto",
+            margin: 0,
+          }}
+        >
+          {JSON.stringify(state.data, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
 
 export default function ApiSmokeTest() {
-  const [children, setChildren] = useState<Child[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [children, setChildren] = useState<ApiState>({ status: "loading" });
+  const [items, setItems] = useState<ApiState>({ status: "loading" });
+  const [briefings, setBriefings] = useState<ApiState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
       try {
-        setLoading(true);
-        setError(null);
-
-        const res = await fetch("/api/children", {
-          headers: { Accept: "application/json" },
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`GET /api/children failed (${res.status}). ${text}`);
-        }
-
-        const data = (await res.json()) as Child[];
-
-        if (!cancelled) setChildren(data);
+        const data = await fetchJson("/api/children");
+        if (!cancelled) setChildren({ status: "success", data });
       } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? "Unknown error");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setChildren({ status: "error", message: e?.message ?? String(e) });
+      }
+
+      try {
+        const data = await fetchJson("/api/items");
+        if (!cancelled) setItems({ status: "success", data });
+      } catch (e: any) {
+        if (!cancelled) setItems({ status: "error", message: e?.message ?? String(e) });
+      }
+
+      try {
+        const data = await fetchJson("/api/briefings");
+        if (!cancelled) setBriefings({ status: "success", data });
+      } catch (e: any) {
+        if (!cancelled) setBriefings({ status: "error", message: e?.message ?? String(e) });
       }
     }
 
     run();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
   return (
-    <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-      <h2 style={{ marginBottom: 8 }}>API Smoke Test</h2>
+    <div style={{ padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+      <h1 style={{ marginTop: 0 }}>API Smoke Test</h1>
 
-      {loading && <div>Loading /api/children...</div>}
-
-      {error && (
-        <div style={{ whiteSpace: "pre-wrap" }}>
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
-      {!loading && !error && (
-        <>
-          <div style={{ marginBottom: 8 }}>
-            <strong>Success.</strong> Received {children?.length ?? 0} children.
-          </div>
-          <pre
-            style={{
-              background: "#111",
-              color: "#eee",
-              padding: 12,
-              borderRadius: 8,
-              overflowX: "auto",
-            }}
-          >
-            {JSON.stringify(children, null, 2)}
-          </pre>
-        </>
-      )}
+      <Section title="/api/children" state={children} />
+      <Section title="/api/items" state={items} />
+      <Section title="/api/briefings" state={briefings} />
     </div>
   );
 }
