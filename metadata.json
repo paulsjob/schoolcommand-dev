@@ -1,0 +1,5 @@
+{
+  "name": "SchoolCommand: Family School Management Agent",
+  "description": "An automated agent that aggregates, parses, and prioritizes school information from Gmail, Calendar, Teams, and newsletters for multiple children.",
+  "requestFramePermissions": []
+}
