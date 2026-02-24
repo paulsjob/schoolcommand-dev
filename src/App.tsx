@@ -35,26 +35,28 @@ type Priority = 'low' | 'medium' | 'high';
 type Status = 'pending' | 'completed' | 'dismissed';
 
 interface Child {
-  id: string;
+  id: number;
   name: string;
   grade: string;
 }
 
 interface SchoolItem {
-  id: string;
-  child_id: string;
-  child_name: string;
+  id: any;
+  child_id: any;
+  child_name?: string;
   type: ItemType;
-  title: string;
+  title?: string;
   description: string;
-  due_date: string | null;
-  priority: Priority;
-  status: Status;
-  source_type: string;
+  due_date: string;
+  priority?: Priority;
+  status?: Status;
+  source_type?: string;
+  source?: string;
+  created_at?: string;
 }
 
 interface Briefing {
-  id: string;
+  id: number;
   date: string;
   content: string;
 }
@@ -63,29 +65,75 @@ export default function App() {
   const [children, setChildren] = useState<Child[]>([]);
   const [items, setItems] = useState<SchoolItem[]>([]);
   const [briefings, setBriefings] = useState<Briefing[]>([]);
-  const [selectedChildId, setSelectedChildId] = useState<'all' | string>('all');
+  const [selectedChildId, setSelectedChildId] = useState<number | 'all'>('all');
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'briefing' | 'settings'>('dashboard');
+  const [liveBriefingMarkdown, setLiveBriefingMarkdown] = useState<string>('');
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  const fetchDailyBriefing = async () => {
+    try {
+      const res = await fetch('/api/daily-briefing');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Daily briefing fetch failed:', err);
+        setLiveBriefingMarkdown('');
+        setBriefings([]);
+        return;
+      }
+
+      const data = await res.json();
+      const md = data?.markdown || '';
+      const date = data?.date || new Date().toISOString();
+
+      setLiveBriefingMarkdown(md);
+      setBriefings([
+        {
+          id: 1,
+          date,
+          content: md,
+        },
+      ]);
+    } catch (error) {
+      console.error('Error fetching daily briefing:', error);
+      setLiveBriefingMarkdown('');
+      setBriefings([]);
+    }
+  };
+
   const fetchData = async () => {
     try {
-      const [childrenRes, itemsRes, briefingsRes] = await Promise.all([
+      const [childrenRes, itemsRes] = await Promise.all([
         fetch('/api/children'),
         fetch('/api/items'),
-        fetch('/api/briefings')
       ]);
 
       const childrenJson = await childrenRes.json();
       const itemsJson = await itemsRes.json();
-      const briefingsJson = await briefingsRes.json();
 
-      setChildren(Array.isArray(childrenJson) ? childrenJson : []);
-      setItems(Array.isArray(itemsJson) ? itemsJson : []);
-      setBriefings(Array.isArray(briefingsJson) ? briefingsJson : []);
+      setChildren(childrenJson);
+
+      // If items coming from Supabase are missing fields your UI expects, normalize lightly here.
+      // Current items table has: id, child_id, type, description, due_date, source, created_at
+      const normalizedItems: SchoolItem[] = (itemsJson || []).map((it: any) => ({
+        ...it,
+        type: it.type,
+        description: it.description || '',
+        due_date: it.due_date || '',
+        child_id: it.child_id,
+        child_name: it.child_name || it.child_id || 'UNKNOWN',
+        title: it.title || (it.type ? `${it.type[0].toUpperCase()}${it.type.slice(1)}` : 'Item'),
+        status: it.status || 'pending',
+        source_type: it.source_type || it.source || 'manual',
+      }));
+
+      setItems(normalizedItems);
+
+      // Pull the daily briefing fresh every time
+      await fetchDailyBriefing();
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -96,16 +144,21 @@ export default function App() {
     try {
       const response = await fetch('/api/sync', { method: 'POST' });
       if (response.ok) {
+        // Refresh everything, including the briefing
         await fetchData();
+      } else {
+        // Even if sync fails, still try to refresh briefing from current items
+        await fetchDailyBriefing();
       }
     } catch (error) {
       console.error('Sync failed:', error);
+      await fetchDailyBriefing();
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const updateItemStatus = async (id: string, status: Status) => {
+  const updateItemStatus = async (id: any, status: Status) => {
     try {
       await fetch(`/api/items/${id}`, {
         method: 'PATCH',
@@ -120,7 +173,7 @@ export default function App() {
 
   const filteredItems = items.filter(item =>
     (selectedChildId === 'all' || item.child_id === selectedChildId) &&
-    item.status === 'pending'
+    (item.status ? item.status === 'pending' : true)
   );
 
   const getTypeIcon = (type: ItemType) => {
@@ -130,6 +183,7 @@ export default function App() {
       case 'event': return <Calendar className="w-4 h-4 text-blue-500" />;
       case 'message': return <Mail className="w-4 h-4 text-amber-500" />;
       case 'prep': return <RefreshCw className="w-4 h-4 text-emerald-500" />;
+      default: return <FileText className="w-4 h-4" />;
     }
   };
 
@@ -152,6 +206,10 @@ export default function App() {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  const dashboardBriefingPreview = liveBriefingMarkdown
+    ? liveBriefingMarkdown
+    : 'No briefing generated yet. Hit Sync Agent to generate one.';
 
   return (
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0]">
@@ -236,7 +294,6 @@ export default function App() {
               >
                 MASTER
               </button>
-
               {children.map(child => (
                 <button
                   key={child.id}
@@ -333,12 +390,14 @@ export default function App() {
                           >
                             <div className="flex justify-center">{getTypeIcon(item.type)}</div>
                             <div>
-                              <p className="text-sm font-bold group-hover:underline cursor-pointer">{item.title}</p>
+                              <p className="text-sm font-bold group-hover:underline cursor-pointer">
+                                {(item.title || 'Item') + ': ' + (item.description || '')}
+                              </p>
                               <p className="text-xs opacity-50 line-clamp-1">{item.description}</p>
                             </div>
                             <div>
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 uppercase tracking-tight">
-                                {item.child_name}
+                                {item.child_name || item.child_id || 'UNKNOWN'}
                               </span>
                             </div>
                             <div className="text-xs font-mono">
@@ -378,11 +437,11 @@ export default function App() {
                     <FileText className="w-32 h-32" />
                   </div>
                   <h3 className="text-2xl font-serif italic mb-4">Daily Briefing</h3>
-                  <p className="text-sm opacity-70 mb-6 leading-relaxed">
-                    Good morning! Today is a heavy day for <span className="text-white font-bold">Child 1</span> with a math test.
-                    <span className="text-white font-bold">Child 3</span> needs to bring library books.
-                    The weather is rainy, so pack umbrellas.
-                  </p>
+
+                  <div className="text-sm opacity-80 mb-6 leading-relaxed prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{dashboardBriefingPreview}</ReactMarkdown>
+                  </div>
+
                   <button
                     onClick={() => setActiveTab('briefing')}
                     className="px-6 py-2 bg-[#E4E3E0] text-[#141414] rounded-full text-xs font-bold hover:scale-105 transition-transform"
@@ -498,7 +557,7 @@ export default function App() {
                 <div className="bg-white p-8 rounded-3xl border border-[#141414]/10 shadow-sm">
                   <h3 className="text-lg font-bold mb-4 pb-2 border-b border-[#141414]/5">Today's Overview</h3>
                   <div className="prose prose-sm max-w-none text-[#141414]/80 markdown-body">
-                    {briefings[0] ? (
+                    {briefings[0]?.content ? (
                       <ReactMarkdown>{briefings[0].content}</ReactMarkdown>
                     ) : (
                       <p>No briefing generated yet. Click 'Sync Agent' to generate one.</p>
@@ -506,13 +565,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'calendar' && (
-            <div className="max-w-3xl mx-auto space-y-6">
-              <h2 className="text-2xl font-bold font-serif italic">Calendar</h2>
-              <p className="text-sm opacity-60">Calendar view is coming next.</p>
             </div>
           )}
         </div>
