@@ -8,3 +8,4 @@ coverage/
 !.env.example
 vercelbackend.txt
 school.db
+.env
