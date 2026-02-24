@@ -4,16 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  BookOpen, 
-  Bell, 
-  Settings, 
-  Plus, 
-  RefreshCw, 
-  CheckCircle2, 
-  Clock, 
+import {
+  LayoutDashboard,
+  Calendar,
+  BookOpen,
+  Bell,
+  Settings,
+  RefreshCw,
+  CheckCircle2,
   AlertCircle,
   ChevronRight,
   User,
@@ -23,7 +21,7 @@ import {
   Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { format, isToday, isTomorrow, addDays, parseISO } from 'date-fns';
+import { format, isToday, parseISO } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import ReactMarkdown from 'react-markdown';
@@ -37,26 +35,26 @@ type Priority = 'low' | 'medium' | 'high';
 type Status = 'pending' | 'completed' | 'dismissed';
 
 interface Child {
-  id: number;
+  id: string;
   name: string;
   grade: string;
 }
 
 interface SchoolItem {
-  id: number;
-  child_id: number;
+  id: string;
+  child_id: string;
   child_name: string;
   type: ItemType;
   title: string;
   description: string;
-  due_date: string;
+  due_date: string | null;
   priority: Priority;
   status: Status;
   source_type: string;
 }
 
 interface Briefing {
-  id: number;
+  id: string;
   date: string;
   content: string;
 }
@@ -65,7 +63,7 @@ export default function App() {
   const [children, setChildren] = useState<Child[]>([]);
   const [items, setItems] = useState<SchoolItem[]>([]);
   const [briefings, setBriefings] = useState<Briefing[]>([]);
-  const [selectedChildId, setSelectedChildId] = useState<number | 'all'>('all');
+  const [selectedChildId, setSelectedChildId] = useState<'all' | string>('all');
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'briefing' | 'settings'>('dashboard');
 
@@ -80,10 +78,14 @@ export default function App() {
         fetch('/api/items'),
         fetch('/api/briefings')
       ]);
-      
-      setChildren(await childrenRes.json());
-      setItems(await itemsRes.json());
-      setBriefings(await briefingsRes.json());
+
+      const childrenJson = await childrenRes.json();
+      const itemsJson = await itemsRes.json();
+      const briefingsJson = await briefingsRes.json();
+
+      setChildren(Array.isArray(childrenJson) ? childrenJson : []);
+      setItems(Array.isArray(itemsJson) ? itemsJson : []);
+      setBriefings(Array.isArray(briefingsJson) ? briefingsJson : []);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -103,7 +105,7 @@ export default function App() {
     }
   };
 
-  const updateItemStatus = async (id: number, status: Status) => {
+  const updateItemStatus = async (id: string, status: Status) => {
     try {
       await fetch(`/api/items/${id}`, {
         method: 'PATCH',
@@ -116,7 +118,7 @@ export default function App() {
     }
   };
 
-  const filteredItems = items.filter(item => 
+  const filteredItems = items.filter(item =>
     (selectedChildId === 'all' || item.child_id === selectedChildId) &&
     item.status === 'pending'
   );
@@ -128,14 +130,6 @@ export default function App() {
       case 'event': return <Calendar className="w-4 h-4 text-blue-500" />;
       case 'message': return <Mail className="w-4 h-4 text-amber-500" />;
       case 'prep': return <RefreshCw className="w-4 h-4 text-emerald-500" />;
-    }
-  };
-
-  const getPriorityColor = (priority: Priority) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-700 border-red-200';
-      case 'medium': return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'low': return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
 
@@ -172,7 +166,7 @@ export default function App() {
         </div>
 
         <nav className="mt-6 px-4 space-y-1">
-          <button 
+          <button
             onClick={() => setActiveTab('dashboard')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
@@ -182,7 +176,7 @@ export default function App() {
             <LayoutDashboard className="w-4 h-4" />
             Dashboard
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('calendar')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
@@ -192,7 +186,7 @@ export default function App() {
             <Calendar className="w-4 h-4" />
             Calendar
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('briefing')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
@@ -202,7 +196,7 @@ export default function App() {
             <FileText className="w-4 h-4" />
             Daily Briefing
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('settings')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
@@ -221,7 +215,7 @@ export default function App() {
             </div>
             <div>
               <p className="text-xs font-bold">Parent Account</p>
-              <p className="text-[10px] opacity-50">3 Children Connected</p>
+              <p className="text-[10px] opacity-50">{children.length} Children Connected</p>
             </div>
           </div>
         </div>
@@ -233,7 +227,7 @@ export default function App() {
         <header className="h-20 border-b border-[#141414]/10 flex items-center justify-between px-8 bg-[#E4E3E0]/80 backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center gap-4">
             <div className="flex bg-[#141414]/5 p-1 rounded-lg">
-              <button 
+              <button
                 onClick={() => setSelectedChildId('all')}
                 className={cn(
                   "px-4 py-1.5 rounded-md text-xs font-bold transition-all",
@@ -242,8 +236,9 @@ export default function App() {
               >
                 MASTER
               </button>
+
               {children.map(child => (
-                <button 
+                <button
                   key={child.id}
                   onClick={() => setSelectedChildId(child.id)}
                   className={cn(
@@ -258,7 +253,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={handleSync}
               disabled={isSyncing}
               className="flex items-center gap-2 px-4 py-2 bg-[#141414] text-[#E4E3E0] rounded-lg text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
@@ -328,7 +323,7 @@ export default function App() {
                     <AnimatePresence mode="popLayout">
                       {filteredItems.length > 0 ? (
                         filteredItems.map((item) => (
-                          <motion.div 
+                          <motion.div
                             layout
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -350,13 +345,13 @@ export default function App() {
                               {item.due_date ? format(parseISO(item.due_date), 'MMM d, h:mm a') : 'No Date'}
                             </div>
                             <div className="flex justify-end gap-2">
-                              <button 
+                              <button
                                 onClick={() => updateItemStatus(item.id, 'completed')}
                                 className="p-1.5 rounded-full hover:bg-emerald-100 text-emerald-600 transition-colors"
                               >
                                 <CheckCircle2 className="w-4 h-4" />
                               </button>
-                              <button 
+                              <button
                                 onClick={() => updateItemStatus(item.id, 'dismissed')}
                                 className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors"
                               >
@@ -384,11 +379,11 @@ export default function App() {
                   </div>
                   <h3 className="text-2xl font-serif italic mb-4">Daily Briefing</h3>
                   <p className="text-sm opacity-70 mb-6 leading-relaxed">
-                    Good morning! Today is a heavy day for <span className="text-white font-bold">Child 1</span> with a math test. 
-                    <span className="text-white font-bold">Child 3</span> needs to bring library books. 
+                    Good morning! Today is a heavy day for <span className="text-white font-bold">Child 1</span> with a math test.
+                    <span className="text-white font-bold">Child 3</span> needs to bring library books.
                     The weather is rainy, so pack umbrellas.
                   </p>
-                  <button 
+                  <button
                     onClick={() => setActiveTab('briefing')}
                     className="px-6 py-2 bg-[#E4E3E0] text-[#141414] rounded-full text-xs font-bold hover:scale-105 transition-transform"
                   >
@@ -443,7 +438,7 @@ export default function App() {
                       <p className="text-xs opacity-50">Gmail & Google Calendar</p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={handleConnectGoogle}
                     className="px-4 py-2 bg-[#141414] text-[#E4E3E0] rounded-lg text-xs font-bold"
                   >
@@ -511,6 +506,13 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <div className="max-w-3xl mx-auto space-y-6">
+              <h2 className="text-2xl font-bold font-serif italic">Calendar</h2>
+              <p className="text-sm opacity-60">Calendar view is coming next.</p>
             </div>
           )}
         </div>
